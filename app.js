@@ -1,10 +1,13 @@
+const CHAT_WEBHOOK_URL="https://logamarketing.app.n8n.cloud/webhook/f227d4d5-1132-44a3-8946-24954202567c";
+
 const answers={
   pickup:"Momentum's current public information lists Piedmont Elementary, Northwood Elementary, Stone Ridge Elementary, Surrey Hills Elementary, Redstone Intermediate, Piedmont Intermediate, and the Early Childhood Center. David would approve the live list before launch.",
   price:"The current public after-school membership lists a $77 weekly rate. A live assistant would always use David's approved current pricing and enrollment terms.",
   ages:"The after-school program is presented for K-5 students. Martial arts serves additional ages, but David would confirm the exact class groups before launch.",
   camp:"For camp, the live answer can cover water bottles, snacks, activity clothing, pickup authorization, and special-event items from one approved checklist.",
   process:"Momentum picks children up from participating schools, then provides homework time, martial arts, sports, games, and creative activities before parent pickup by 6:00 PM.",
-  tournament:"The Parent Hub can keep tournament dates, locations, arrival times, registration links, uniform reminders, medal photos, and recaps together."
+  tournament:"The Parent Hub can keep tournament dates, locations, arrival times, registration links, uniform reminders, medal photos, and recaps together.",
+  owner:"This system answers common parent questions, captures leads, routes unknown questions to the team, and keeps updates, tournaments, medals, pickup notes, and reminders in one dependable place."
 };
 const updates=[
   {category:"After-School",title:"Pickup route reminder",message:"A clear place for school changes, closure days, and transportation notes."},
@@ -53,6 +56,7 @@ function addMessage(text,type){
   item.textContent=text;
   messages.appendChild(item);
   messages.scrollTop=messages.scrollHeight;
+  return item;
 }
 function getAnswer(question){
   const q=question.toLowerCase();
@@ -60,15 +64,49 @@ function getAnswer(question){
   if(q.includes("school")||q.includes("pickup"))return answers.pickup;
   if(q.includes("age")||q.includes("old")||q.includes("grade"))return answers.ages;
   if(q.includes("camp")||q.includes("bring"))return answers.camp;
+  if(q.includes("david")||q.includes("owner")||q.includes("system")||q.includes("software")||q.includes("parent hub"))return answers.owner;
   if(q.includes("after-school")||q.includes("afterschool")||q.includes("work"))return answers.process;
   if(q.includes("tournament")||q.includes("medal")||q.includes("belt"))return answers.tournament;
   return "I would answer from Momentum's approved information. If I do not know, I can collect your question for the team instead of sending you to a dead end.";
 }
-function ask(question){
+function extractWebhookAnswer(data){
+  if(typeof data==="string")return data;
+  if(!data||typeof data!=="object")return "";
+  if(typeof data.answer==="string")return data.answer;
+  if(typeof data.message==="string")return data.message;
+  if(typeof data.response==="string")return data.response;
+  if(typeof data.text==="string")return data.text;
+  const output=Array.isArray(data.output)?data.output:[];
+  for(const item of output){
+    const content=Array.isArray(item.content)?item.content:[];
+    const textItem=content.find(entry=>entry&&entry.type==="output_text"&&typeof entry.text==="string");
+    if(textItem)return textItem.text;
+  }
+  return "";
+}
+async function getLiveAnswer(question){
+  const response=await fetch(CHAT_WEBHOOK_URL,{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({message:question,source:"momentum-demo",page:window.location.href})
+  });
+  if(!response.ok)throw new Error(`Webhook ${response.status}`);
+  const data=await response.json();
+  const answer=extractWebhookAnswer(data);
+  if(!answer)throw new Error("Webhook returned no answer");
+  return answer;
+}
+async function ask(question){
   if(!question.trim())return;
   setChat(true);
   addMessage(question,"user");
-  window.setTimeout(()=>addMessage(getAnswer(question),"bot"),320);
+  const pending=addMessage("Let me check Momentum's approved information...","bot");
+  try{
+    pending.textContent=await getLiveAnswer(question);
+  }catch(error){
+    pending.textContent=getAnswer(question);
+  }
+  messages.scrollTop=messages.scrollHeight;
 }
 document.querySelectorAll("[data-question]").forEach(button=>button.addEventListener("click",()=>ask(button.dataset.question)));
 chatForm.addEventListener("submit",event=>{event.preventDefault();ask(chatInput.value);chatInput.value=""});
